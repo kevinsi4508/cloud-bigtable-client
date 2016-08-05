@@ -20,6 +20,7 @@ import com.google.cloud.bigtable.config.BigtableOptions;
 import com.google.cloud.bigtable.config.Logger;
 import com.google.cloud.bigtable.grpc.BigtableSession;
 import com.google.cloud.bigtable.grpc.BigtableSessionSharedThreadPools;
+import com.google.cloud.bigtable.grpc.BigtableSnapshotAdminClient;
 import com.google.cloud.bigtable.grpc.BigtableTableAdminClient;
 import com.google.cloud.bigtable.hbase.BigtableBufferedMutator;
 import com.google.cloud.bigtable.hbase.BigtableOptionsFactory;
@@ -324,6 +325,10 @@ public abstract class AbstractBigtableConnection implements Connection, Closeabl
    */
   protected BigtableTableAdminClient getBigtableTableAdminClient() throws IOException {
     return session.getTableAdminClient();
+  }
+  
+  protected BigtableSnapshotAdminClient getBigtableSnapshotAdminClient() throws IOException {
+    return session.getSnapshotAdminClient();
   }
 
   /**

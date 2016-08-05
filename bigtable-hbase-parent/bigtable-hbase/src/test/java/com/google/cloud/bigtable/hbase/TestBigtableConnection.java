@@ -31,7 +31,7 @@ public class TestBigtableConnection extends AbstractBigtableConnection {
   @Override
   public Admin getAdmin() throws IOException {
     return new AbstractBigtableAdmin(getOptions(), getConfiguration(), this,
-        getBigtableTableAdminClient(), getDisabledTables()) {
+        getBigtableTableAdminClient(), getBigtableSnapshotAdminClient(), getDisabledTables()) {
     };
   }
 

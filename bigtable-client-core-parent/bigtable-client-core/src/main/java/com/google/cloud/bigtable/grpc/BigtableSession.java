@@ -237,6 +237,7 @@ public class BigtableSession implements Closeable {
 
   private final BigtableDataClient dataClient;
   private BigtableTableAdminClient tableAdminClient;
+  private BigtableSnapshotAdminClient snapshotAdminClient;
   private BigtableInstanceGrpcClient instanceAdminClient;
 
   private final BigtableOptions options;
@@ -412,6 +413,14 @@ public class BigtableSession implements Closeable {
       tableAdminClient = new BigtableTableAdminGrpcClient(channel);
     }
     return tableAdminClient;
+  }
+  
+  public synchronized BigtableSnapshotAdminClient getSnapshotAdminClient() throws IOException {
+    if (snapshotAdminClient == null) {
+      ManagedChannel channel = createChannelPool(options.getTableAdminHost());
+      snapshotAdminClient = new BigtableSnapshotAdminGrpcClient(channel);
+    }
+    return snapshotAdminClient;
   }
 
   /**

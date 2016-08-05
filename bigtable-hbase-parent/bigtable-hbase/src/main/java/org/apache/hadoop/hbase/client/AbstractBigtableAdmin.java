@@ -54,21 +54,25 @@ import org.apache.hadoop.hbase.snapshot.SnapshotCreationException;
 import org.apache.hadoop.hbase.snapshot.UnknownSnapshotException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
-
+import com.google.bigtable.admin.v2.CreateSnapshotRequest;
 import com.google.bigtable.admin.v2.CreateTableRequest;
 import com.google.bigtable.admin.v2.CreateTableRequest.Split;
 import com.google.bigtable.admin.v2.ModifyColumnFamiliesRequest;
 import com.google.bigtable.admin.v2.ModifyColumnFamiliesRequest.Modification;
+import com.google.bigtable.admin.v2.Snapshot;
 import com.google.bigtable.admin.v2.DeleteTableRequest;
 import com.google.bigtable.admin.v2.DeleteTableRequest.Builder;
 import com.google.bigtable.admin.v2.DropRowRangeRequest;
 import com.google.bigtable.admin.v2.GetTableRequest;
+import com.google.bigtable.admin.v2.ListSnapshotsRequest;
+import com.google.bigtable.admin.v2.ListSnapshotsResponse;
 import com.google.bigtable.admin.v2.ListTablesRequest;
 import com.google.bigtable.admin.v2.ListTablesResponse;
 import com.google.bigtable.admin.v2.Table;
 import com.google.cloud.bigtable.config.BigtableOptions;
 import com.google.cloud.bigtable.config.Logger;
 import com.google.cloud.bigtable.grpc.BigtableInstanceName;
+import com.google.cloud.bigtable.grpc.BigtableSnapshotAdminClient;
 import com.google.cloud.bigtable.grpc.BigtableTableAdminClient;
 import com.google.cloud.bigtable.hbase.adapters.admin.ColumnDescriptorAdapter;
 import com.google.cloud.bigtable.hbase.adapters.admin.TableAdapter;
@@ -100,6 +104,7 @@ public abstract class AbstractBigtableAdmin implements Admin {
   private final BigtableOptions options;
   private final AbstractBigtableConnection connection;
   private final BigtableTableAdminClient bigtableTableAdminClient;
+  private final BigtableSnapshotAdminClient bigtableSnapshotAdminClient;
 
   private BigtableInstanceName bigtableInstanceName;
   private final ColumnDescriptorAdapter columnDescriptorAdapter = new ColumnDescriptorAdapter();
@@ -119,12 +124,14 @@ public abstract class AbstractBigtableAdmin implements Admin {
       Configuration configuration,
       AbstractBigtableConnection connection,
       BigtableTableAdminClient bigtableTableAdminClient,
+      BigtableSnapshotAdminClient bigtableSnapshotAdminClient,
       Set<TableName> disabledTables) {
     LOG.debug("Creating BigtableAdmin");
     this.configuration = configuration;
     this.options = options;
     this.connection = connection;
     this.bigtableTableAdminClient = bigtableTableAdminClient;
+    this.bigtableSnapshotAdminClient = bigtableSnapshotAdminClient;
     this.disabledTables = disabledTables;
     this.bigtableInstanceName = options.getInstanceName();
     this.tableAdapter = new TableAdapter(options, columnDescriptorAdapter);
@@ -1107,7 +1114,13 @@ public abstract class AbstractBigtableAdmin implements Admin {
   @Override
   public void snapshot(String snapshotName, TableName tableName)
       throws IOException, SnapshotCreationException, IllegalArgumentException {
-    throw new UnsupportedOperationException("snapshot");  // TODO
+    CreateSnapshotRequest request = CreateSnapshotRequest.newBuilder()
+        .setParent("parent")
+        .setSnapshotId(snapshotName)
+        .setSourceTableName(tableName.getNameAsString())
+        .build();
+    bigtableSnapshotAdminClient.createSnapshot(request);
+    // get result from long running operation.
   }
 
   /** {@inheritDoc} */
@@ -1136,6 +1149,7 @@ public abstract class AbstractBigtableAdmin implements Admin {
   @Override
   public MasterProtos.SnapshotResponse takeSnapshotAsync(HBaseProtos.SnapshotDescription snapshot)
       throws IOException, SnapshotCreationException {
+    // We don't have to support this.
     throw new UnsupportedOperationException("takeSnapshotAsync");  // TODO
   }
 
@@ -1210,7 +1224,19 @@ public abstract class AbstractBigtableAdmin implements Admin {
   /** {@inheritDoc} */
   @Override
   public List<HBaseProtos.SnapshotDescription> listSnapshots() throws IOException {
-    throw new UnsupportedOperationException("listSnapshots");  // TODO
+    ListSnapshotsRequest request = ListSnapshotsRequest.newBuilder()
+        .setParent("parent")
+        .build();
+    ListSnapshotsResponse response = bigtableSnapshotAdminClient.listSnapshots(request);
+    List<HBaseProtos.SnapshotDescription> list = new ArrayList<>();
+    for (Snapshot s : response.getSnapshotsList()) {
+      HBaseProtos.SnapshotDescription description = HBaseProtos.SnapshotDescription.newBuilder()
+          .setName(s.getName())
+          .setTable(s.getSourceTable().getName())
+          .build();
+      list.add(description);
+    }
+    return list;
   }
 
   /** {@inheritDoc} */

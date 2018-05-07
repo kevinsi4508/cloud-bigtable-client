@@ -38,6 +38,7 @@ import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Gauge;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.repackaged.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.sdk.repackaged.com.google.common.base.Preconditions;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -52,6 +53,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.BufferedMutator;
 import org.apache.hadoop.hbase.client.BufferedMutator.ExceptionListener;
+import org.apache.hadoop.hbase.filter.ParseFilter;
 import org.apache.hadoop.hbase.client.BufferedMutatorParams;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.Delete;
@@ -65,7 +67,7 @@ import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import com.google.bigtable.repackaged.com.google.bigtable.v2.ReadRowsRequest;
 import com.google.bigtable.repackaged.com.google.bigtable.v2.SampleRowKeysResponse;
 import com.google.bigtable.repackaged.com.google.cloud.bigtable.config.BulkOptions;
 import com.google.bigtable.repackaged.com.google.cloud.bigtable.grpc.BigtableDataClient;
@@ -1023,6 +1025,22 @@ public class CloudBigtableIO {
     return new CloudBigtableWriteTransform<>(writeFn, config);
   }
 
+  public static PTransform<PCollection<Mutation>, PDone> writeToTable(
+      ValueProvider<String> projectId,
+      ValueProvider<String> instanceId,
+      ValueProvider<String> tableId,
+      ValueProvider<String> appProfileId) {
+    CloudBigtableTableConfiguration.Builder configBuilder =
+        new CloudBigtableTableConfiguration.Builder()
+            .withProjectId(projectId)
+            .withInstanceId(instanceId)
+            .withTableId(tableId);
+    if (appProfileId != null) {
+      configBuilder.withAppProfileId(appProfileId);
+    }
+    return writeToTable(configBuilder.build());
+  }
+
   private static Coder<Result> getResultCoder() {
     try {
       return CoderRegistry.createDefault().getCoder(Result.class);
@@ -1050,11 +1068,46 @@ public class CloudBigtableIO {
     return new CloudBigtableWriteTransform<>(new CloudBigtableMultiTableWriteFn(config), config);
   }
 
+  public static PTransform<PCollection<KV<String, Iterable<Mutation>>>, PDone>
+      writeToMultipleTables(ValueProvider<String> projectId, ValueProvider<String> instanceId) {
+    CloudBigtableConfiguration config =
+        new CloudBigtableConfiguration.Builder()
+            .withProjectId(projectId)
+            .withInstanceId(instanceId)
+            .build();
+    // Do we need appProfileId here?
+    return writeToMultipleTables(config);
+  }
+
   /**
    * Creates a {@link BoundedSource} for a Cloud Bigtable {@link Table}, which is potentially
    * filtered by a {@link Scan}.
    */
   public static BoundedSource<Result> read(CloudBigtableScanConfiguration config) {
     return new Source(config);
+  }
+
+  /**
+   * Creates a {@link BoundedSource} for a Cloud Bigtable {@link Table}, which is potentially
+   * filtered by a {@link Scan}.
+   */
+  public static BoundedSource<Result> read(
+      ValueProvider<String> projectId,
+      ValueProvider<String> instanceId,
+      ValueProvider<String> tableId,
+      ValueProvider<String> appProfileId,
+      ValueProvider<ReadRowsRequest> request) {
+    CloudBigtableScanConfiguration.Builder configBuilder =
+        new CloudBigtableScanConfiguration.Builder()
+            .withProjectId(projectId)
+            .withInstanceId(instanceId)
+            .withTableId(tableId)
+            .withRequest(request);
+
+    if (appProfileId != null) {
+      configBuilder.withAppProfileId(appProfileId);
+    }
+
+    return read(configBuilder.build());
   }
 }

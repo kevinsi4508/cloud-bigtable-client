@@ -87,15 +87,7 @@ public class TemplatizedImportJob {
 
     Pipeline pipeline = buildPipeline(opts);
 
-    PipelineResult result = pipeline.run();
-
-    if (opts.getWait()) {
-      State state = result.waitUntilFinish();
-      LOG.info("Job finished with state: " + state.name());
-      if (state != State.DONE) {
-        System.exit(1);
-      }
-    }
+    pipeline.run();
   }
 
   @VisibleForTesting

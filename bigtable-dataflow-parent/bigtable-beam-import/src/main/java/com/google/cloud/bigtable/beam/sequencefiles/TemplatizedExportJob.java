@@ -141,6 +141,12 @@ public class TemplatizedExportJob {
     boolean getWait();
     @SuppressWarnings("unused")
     void setWait(boolean wait);
+
+    @Default.String("")
+    ValueProvider<String> getOutput();
+    @SuppressWarnings("unused")
+    void setOutput(ValueProvider<String> output);
+
   }
 
   static class ReadRowsRequestValueProvider
@@ -202,15 +208,7 @@ public class TemplatizedExportJob {
 
     Pipeline pipeline = buildPipeline(opts);
 
-    PipelineResult result = pipeline.run();
-
-    if (opts.getWait()) {
-      State state = result.waitUntilFinish();
-      LOG.info("Job finished with state: " + state.name());
-      if (state != State.DONE) {
-        System.exit(1);
-      }
-    }
+    pipeline.run();
   }
 
   static Pipeline buildPipeline(ExportOptions opts) {

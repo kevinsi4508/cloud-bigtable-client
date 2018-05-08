@@ -76,6 +76,11 @@ public class TemplatizedImportJob {
     boolean getWait();
     @SuppressWarnings("unused")
     void setWait(boolean wait);
+  
+    @Default.String("")
+    ValueProvider<String> getOutput();
+    @SuppressWarnings("unused")
+    void setOutput(ValueProvider<String> output);
   }
 
   public static void main(String[] args) {

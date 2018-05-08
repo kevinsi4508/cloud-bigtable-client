@@ -25,7 +25,7 @@ limitations under the License.
   <artifactId>bigtable-beam-import</artifactId>
 
   <properties>
-    <mainClass>com.google.cloud.bigtable.beam.sequencefiles.TemplatizedExportJob</mainClass>
+    <mainClass>com.google.cloud.bigtable.beam.sequencefiles.TemplatizedImportJob</mainClass>
   </properties>
 
   <dependencies>

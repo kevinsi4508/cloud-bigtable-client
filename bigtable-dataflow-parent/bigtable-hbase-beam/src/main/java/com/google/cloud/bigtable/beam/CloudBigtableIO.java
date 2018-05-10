@@ -335,6 +335,7 @@ public class CloudBigtableIO {
       }
       SOURCE_LOG.info("Estimated size in bytes: " + totalEstimatedSizeBytes);
 
+      System.out.println("Estimated size in bytes: " + totalEstimatedSizeBytes);
       return totalEstimatedSizeBytes;
     }
 
@@ -815,7 +816,6 @@ public class CloudBigtableIO {
     private static final long serialVersionUID = 1L;
 
     // Stats
-    protected static final Counter mutationsCounter = Metrics.counter(CloudBigtableIO.class, "Mutations");
     protected static final Counter exceptionsCounter = Metrics.counter(CloudBigtableIO.class, "Exceptions");
     protected static final Gauge cumulativeThrottlingSeconds = Metrics.gauge(CloudBigtableIO.class, "ThrottlingSeconds");
 
@@ -858,6 +858,8 @@ public class CloudBigtableIO {
       extends BufferedMutatorDoFn<Mutation> {
     private static final long serialVersionUID = 2L;
     private transient BufferedMutator mutator;
+    private Counter mutationsCounter =
+        Metrics.counter(CloudBigtableSingleTableBufferedWriteFn.class, "Mutations");
 
     public CloudBigtableSingleTableBufferedWriteFn(CloudBigtableTableConfiguration config) {
       super(config);
@@ -880,6 +882,7 @@ public class CloudBigtableIO {
         DOFN_LOG.trace("Persisting {}", Bytes.toStringBinary(mutation.getRow()));
       }
       mutator.mutate(mutation);
+      DOFN_LOG.info("Procssing a mutation:" + mutation.toString());
       mutationsCounter.inc();
     }
 
@@ -919,6 +922,8 @@ public class CloudBigtableIO {
 
     // Stats
     private transient Map<String, BufferedMutator> mutators;
+    private Counter mutationsCounter =
+        Metrics.counter(CloudBigtableMultiTableWriteFn.class, "Mutations");
 
     public CloudBigtableMultiTableWriteFn(CloudBigtableConfiguration config) {
       super(config);

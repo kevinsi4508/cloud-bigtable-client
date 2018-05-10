@@ -15,6 +15,8 @@
  */
 package com.google.cloud.bigtable.beam;
 
+import java.io.Serializable;
+import java.nio.charset.CharacterCodingException;
 import java.util.Map;
 import java.util.Objects;
 
@@ -26,11 +28,14 @@ import org.apache.beam.sdk.options.ValueProvider.StaticValueProvider;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.filter.ParseFilter;
+
 import com.google.bigtable.repackaged.com.google.bigtable.v2.ReadRowsRequest;
 import com.google.bigtable.repackaged.com.google.bigtable.v2.RowRange;
 import com.google.bigtable.repackaged.com.google.bigtable.v2.RowSet;
 import com.google.bigtable.repackaged.com.google.cloud.bigtable.grpc.BigtableInstanceName;
 import com.google.bigtable.repackaged.com.google.cloud.bigtable.util.ByteStringer;
+import com.google.bigtable.repackaged.com.google.common.base.MoreObjects;
 import com.google.bigtable.repackaged.com.google.protobuf.ByteString;
 import com.google.cloud.bigtable.hbase.adapters.Adapters;
 import com.google.cloud.bigtable.hbase.adapters.read.DefaultReadHooks;
@@ -101,6 +106,55 @@ public class CloudBigtableScanConfiguration extends CloudBigtableTableConfigurat
       return withRequest(StaticValueProvider.of(request));
     }
 
+    static class RequestWithKeysValueProvider
+        implements ValueProvider<ReadRowsRequest>, Serializable {
+      private final ByteString startKey;
+      private final ByteString stopKey;
+      private final ValueProvider<ReadRowsRequest> request;
+      private transient volatile ReadRowsRequest cachedRequest;
+
+      RequestWithKeysValueProvider(
+          ByteString startKey, ByteString stopKey, ValueProvider<ReadRowsRequest> request) {
+        this.startKey = startKey;
+        this.stopKey = stopKey;
+        this.request = request;
+      }
+
+      @Override
+      public ReadRowsRequest get() {
+        if (cachedRequest == null) {
+          cachedRequest =
+              request
+                  .get()
+                  .toBuilder()
+                  .setRows(
+                      RowSet.newBuilder()
+                          .addRowRanges(
+                              RowRange.newBuilder()
+                                  .setStartKeyClosed(startKey)
+                                  .setEndKeyOpen(stopKey)))
+                  .build();
+        }
+        return cachedRequest;
+      }
+
+      @Override
+      public boolean isAccessible() {
+        return request.isAccessible();
+      }
+
+      @Override
+      public String toString() {
+        if (isAccessible()) {
+          return String.valueOf(get());
+        }
+        return MoreObjects.toStringHelper(this)
+            .add("startKey", startKey)
+            .add("stopKey", stopKey)
+            .toString();
+      }
+    }
+
     /**
      * Internal API that allows a Source to configure the request with a new start/stop row range.
      *
@@ -109,29 +163,13 @@ public class CloudBigtableScanConfiguration extends CloudBigtableTableConfigurat
      * @return The {@link CloudBigtableScanConfiguration.Builder} for chaining convenience.
      */
     Builder withKeys(byte[] startKey, byte[] stopKey) {
-      final ByteString start = ByteStringer.wrap(startKey);
-      final ByteString stop = ByteStringer.wrap(stopKey);
+      ByteString start = ByteStringer.wrap(startKey);
+      ByteString stop = ByteStringer.wrap(stopKey);
       ValueProvider<ReadRowsRequest> request =
           this.request == null
               ? StaticValueProvider.of(ReadRowsRequest.getDefaultInstance())
               : this.request;
-      return withRequest(
-          NestedValueProvider.of(
-              request,
-              new SerializableFunction<ReadRowsRequest, ReadRowsRequest>() {
-                @Override
-                public ReadRowsRequest apply(ReadRowsRequest request) {
-                  return request
-                      .toBuilder()
-                      .setRows(
-                          RowSet.newBuilder()
-                              .addRowRanges(
-                                  RowRange.newBuilder()
-                                      .setStartKeyClosed(start)
-                                      .setEndKeyOpen(stop)))
-                      .build();
-                }
-              }));
+      return withRequest(new RequestWithKeysValueProvider(start, stop, request));
     }
 
     /**
@@ -274,6 +312,7 @@ public class CloudBigtableScanConfiguration extends CloudBigtableTableConfigurat
    * @return The {@link ReadRowsRequest}.
    */
   public ReadRowsRequest getRequest() {
+    System.out.println("request:" + request.get());
     if (request.get().getTableName().isEmpty()) {
       BigtableInstanceName bigtableInstanceName =
           new BigtableInstanceName(getProjectId(), getInstanceId());

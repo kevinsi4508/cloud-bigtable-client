@@ -20,7 +20,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.bigtable.repackaged.com.google.bigtable.v2.ReadRowsRequest;
 import com.google.bigtable.repackaged.com.google.common.base.MoreObjects;
 import com.google.cloud.bigtable.beam.CloudBigtableIO;
+import com.google.cloud.bigtable.hbase.adapters.Adapters;
+import com.google.cloud.bigtable.hbase.adapters.read.DefaultReadHooks;
+import com.google.cloud.bigtable.hbase.adapters.read.ReadHooks;
 import java.io.Serializable;
+import java.nio.charset.CharacterCodingException;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.PipelineResult.State;
@@ -43,6 +47,8 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.filter.ParseFilter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.io.serializer.WritableSerialization;
 
@@ -80,6 +86,7 @@ public class TemplatizedExportJob {
 
   public interface ExportOptions extends GcpOptions {
     @Description("This Bigtable App Profile id. (Replication alpha feature).")
+    @Default.String("default")
     ValueProvider<String> getBigtableAppProfileId();
     @SuppressWarnings("unused")
     void setBigtableAppProfileId(ValueProvider<String> appProfileId);
@@ -172,7 +179,27 @@ public class TemplatizedExportJob {
     public ReadRowsRequest get() {
       if (cachedRequest == null) {
         // Construct ReadRowRequest from parameters.
-        cachedRequest = ReadRowsRequest.getDefaultInstance();
+        Scan scan = new Scan();
+        if (!startRow.get().isEmpty()) {
+          scan.setStartRow(startRow.get().getBytes());
+        }
+        if (!stopRow.get().isEmpty()) {
+          scan.setStopRow(stopRow.get().getBytes());
+        }
+
+        scan.setMaxVersions(maxVersions.get());
+
+        if (!filter.get().isEmpty()) {
+          try {
+            scan.setFilter(new ParseFilter().parseFilterString(filter.get()));
+          } catch (CharacterCodingException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+          }
+        }
+        ReadHooks readHooks = new DefaultReadHooks();
+        ReadRowsRequest.Builder builder = Adapters.SCAN_ADAPTER.adapt(scan, readHooks);
+        cachedRequest = readHooks.applyPreSendHook(builder.build());
       }
       return cachedRequest;
     }

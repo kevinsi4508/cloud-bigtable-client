@@ -16,12 +16,17 @@
 package com.google.cloud.bigtable.beam.sequencefiles;
 
 import com.google.cloud.bigtable.beam.CloudBigtableIO;
+import com.google.cloud.bigtable.beam.CloudBigtableIO.CloudBigtableSingleTableBufferedWriteFn;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
-import org.apache.beam.sdk.PipelineResult.State;
 import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
 import org.apache.beam.sdk.io.Read;
+import org.apache.beam.sdk.metrics.MetricNameFilter;
+import org.apache.beam.sdk.metrics.MetricQueryResults;
+import org.apache.beam.sdk.metrics.MetricResult;
+import org.apache.beam.sdk.metrics.MetricResults;
+import org.apache.beam.sdk.metrics.MetricsFilter;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -46,6 +51,7 @@ public class TemplatizedImportJob {
     //TODO: switch to ValueProviders
 
     @Description("This Bigtable App Profile id. (Replication alpha feature).")
+    @Default.String("default")
     ValueProvider<String> getBigtableAppProfileId();
     @SuppressWarnings("unused")
     void setBigtableAppProfileId(ValueProvider<String> appProfileId);
@@ -57,17 +63,24 @@ public class TemplatizedImportJob {
     void setBigtableProject(ValueProvider<String> projectId);
 
     @Description("The Bigtable instance id that contains the table to export.")
+    @Default.String("kevinsi-test")
     ValueProvider<String> getBigtableInstanceId();
     @SuppressWarnings("unused")
     void setBigtableInstanceId(ValueProvider<String> instanceId);
 
     @Description("The Bigtable table id to export.")
+    @Default.String("table2")
     ValueProvider<String> getBigtableTableId();
     @SuppressWarnings("unused")
     void setBigtableTableId(ValueProvider<String> tableId);
 
-    @Description("The fully qualified file pattern to import. Should of the form '[destinationPath]/part-*'")
+    @Description(
+        "The fully qualified file pattern to import. Should of the form '[destinationPath]/part-*'")
+    // gs://template_testing/data_folder/table-*
+    @Default.String(
+        "gs://stellar-mercury-540/template_testing/data_folder/exports/d2a00093-be9e-40f2-ae9c-4557e6236813/part-*")
     ValueProvider<String> getSourcePattern();
+
     @SuppressWarnings("unused")
     void setSourcePattern(ValueProvider<String> sourcePath);
 
@@ -92,7 +105,21 @@ public class TemplatizedImportJob {
 
     Pipeline pipeline = buildPipeline(opts);
 
-    pipeline.run();
+    PipelineResult result = pipeline.run();
+    MetricResults metrics = result.metrics();
+
+    MetricQueryResults metricResults =
+        metrics.queryMetrics(
+            MetricsFilter.builder()
+                .addNameFilter(
+                    MetricNameFilter.named(
+                        CloudBigtableSingleTableBufferedWriteFn.class, "Mutations"))
+                .build());
+    Iterable<MetricResult<Long>> counters = metricResults.counters();
+    System.out.println("counters...");
+    for (MetricResult<Long> counter : counters) {
+      System.out.println("counter:" + counter.name().name() + ", value:" + counter.committed());
+    }
   }
 
   @VisibleForTesting

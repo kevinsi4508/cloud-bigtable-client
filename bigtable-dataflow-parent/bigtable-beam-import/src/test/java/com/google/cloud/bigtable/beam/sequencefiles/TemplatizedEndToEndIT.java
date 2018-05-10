@@ -62,7 +62,10 @@ public class TemplatizedEndToEndIT {
 
   // Full path of the gcs folder where dataflow jars are uploaded to.
   private static final String GOOGLE_DATAFLOW_STAGING_LOCATION = "google.dataflow.stagingLocation";
-
+  
+  private static String getTestProperty(String name) {
+    return checkNotNull(System.getProperty(name), "Required property missing: " + name);
+  }
 
   private Connection connection;
   private String projectId;
@@ -97,14 +100,9 @@ public class TemplatizedEndToEndIT {
     connection = BigtableConfiguration.connect(projectId, instanceId);
     tableId = "test_" + UUID.randomUUID().toString();
   }
-
-  private static String getTestProperty(String name) {
-    return checkNotNull(System.getProperty(name), "Required property missing: " + name);
-  }
-
+  
   @After
   public void teardown() throws IOException {
-    /*
     final List<GcsPath> paths = gcsUtil.expand(GcsPath.fromUri(workDir + "/*"));
 
     if (!paths.isEmpty()) {
@@ -115,22 +113,70 @@ public class TemplatizedEndToEndIT {
       }
       this.gcsUtil.remove(pathStrs);
     }
-    */
 
     connection.close();
   }
 
+  private State exportData() {
+    DataflowPipelineOptions exportOptions =
+        PipelineOptionsFactory.as(DataflowPipelineOptions.class);
+    exportOptions.setRunner(DataflowRunner.class);
+    exportOptions.setGcpTempLocation(dataflowStagingLocation);
+    exportOptions.setNumWorkers(1);
+    exportOptions.setProject(projectId);
+
+    TemplatizedExportJob.ExportOptions exportOpts =
+        exportOptions.as(TemplatizedExportJob.ExportOptions.class);
+    exportOpts.setBigtableInstanceId(StaticValueProvider.of(instanceId));
+    exportOpts.setBigtableTableId(StaticValueProvider.of(tableId));
+    exportOpts.setDestinationPath(StaticValueProvider.of(workDir));
+
+    return TemplatizedExportJob.buildPipeline(exportOpts).run().waitUntilFinish();
+  }
+
+  private void createDestinationTable(final String destTableId) throws Exception {
+    DataflowPipelineOptions pipelineOpts = PipelineOptionsFactory.as(DataflowPipelineOptions.class);
+    pipelineOpts.setRunner(DataflowRunner.class);
+    pipelineOpts.setGcpTempLocation(dataflowStagingLocation);
+    pipelineOpts.setNumWorkers(1);
+    pipelineOpts.setProject(projectId);
+
+    CreateTableHelper.CreateTableOpts createOpts =
+        pipelineOpts.as(CreateTableHelper.CreateTableOpts.class);
+    createOpts.setBigtableInstanceId(instanceId);
+    createOpts.setBigtableTableId(destTableId);
+    createOpts.setSourcePattern(StaticValueProvider.of(workDir + "/part-*"));
+    createOpts.setFamilies(ImmutableList.of(CF));
+
+    CreateTableHelper.createTable(createOpts);
+  }
+  
+  private State importData(final String destTableId) {
+    DataflowPipelineOptions pipelineOpts = PipelineOptionsFactory.as(DataflowPipelineOptions.class);
+    pipelineOpts.setRunner(DataflowRunner.class);
+    pipelineOpts.setGcpTempLocation(dataflowStagingLocation);
+    pipelineOpts.setNumWorkers(1);
+    pipelineOpts.setProject(projectId);
+
+    TemplatizedImportJob.ImportOptions importOpts = pipelineOpts.as(TemplatizedImportJob.ImportOptions.class);
+    importOpts.setBigtableInstanceId(StaticValueProvider.of(instanceId));
+    importOpts.setBigtableTableId(StaticValueProvider.of(destTableId));
+    importOpts.setSourcePattern(StaticValueProvider.of(workDir + "/part-*"));
+
+    return TemplatizedImportJob.buildPipeline(importOpts).run().waitUntilFinish();
+  }
+
   @Test
   public void testExportImport() throws Exception {
-    // Create a table, populate it & export it
-    final List<Put> testData = Arrays.asList(
-        new Put(Bytes.toBytes("row_key_1"))
-            .addColumn(CF.getBytes(), "col1".getBytes(), 1L, "v1".getBytes())
-            .addColumn(CF.getBytes(), "col1".getBytes(), 2L, "v2".getBytes()),
-        new Put(Bytes.toBytes("row_key_2"))
-            .addColumn(CF.getBytes(), "col2".getBytes(), 1L, "v3".getBytes())
-            .addColumn(CF.getBytes(), "col2".getBytes(), 3L, "v4".getBytes())
-    );
+    // Create the source table, populate it with some test data.
+    final List<Put> testData =
+        Arrays.asList(
+            new Put(Bytes.toBytes("row_key_1"))
+                .addColumn(CF.getBytes(), "col1".getBytes(), 1L, "v1".getBytes())
+                .addColumn(CF.getBytes(), "col1".getBytes(), 2L, "v2".getBytes()),
+            new Put(Bytes.toBytes("row_key_2"))
+                .addColumn(CF.getBytes(), "col2".getBytes(), 1L, "v3".getBytes())
+                .addColumn(CF.getBytes(), "col2".getBytes(), 3L, "v4".getBytes()));
 
     final Set<Cell> flattenedTestData = Sets.newHashSet();
     for (Put put : testData) {
@@ -144,63 +190,29 @@ public class TemplatizedEndToEndIT {
       srcTable.createEmptyTable();
 
       // Populate the source table
-      try (BufferedMutator bufferedMutator = srcTable.getConnection()
-          .getBufferedMutator(TableName.valueOf(tableId))) {
+      try (BufferedMutator bufferedMutator =
+          srcTable.getConnection().getBufferedMutator(TableName.valueOf(tableId))) {
         bufferedMutator.mutate(testData);
       }
 
-      // Export the data
-      DataflowPipelineOptions pipelineOpts = PipelineOptionsFactory.as(DataflowPipelineOptions.class);
-      pipelineOpts.setRunner(DataflowRunner.class);
-      pipelineOpts.setGcpTempLocation(dataflowStagingLocation);
-      pipelineOpts.setNumWorkers(1);
-      pipelineOpts.setProject(projectId);
-
-      TemplatizedExportJob.ExportOptions exportOpts =
-          pipelineOpts.as(TemplatizedExportJob.ExportOptions.class);
-      exportOpts.setBigtableInstanceId(StaticValueProvider.of(instanceId));
-      exportOpts.setBigtableTableId(StaticValueProvider.of(tableId));
-      exportOpts.setDestinationPath(StaticValueProvider.of(workDir));
-
-      State state = TemplatizedExportJob.buildPipeline(exportOpts).run().waitUntilFinish();
-      Assert.assertEquals(State.DONE, state);
+      // Export the data.
+      State exportState = exportData();
+      Assert.assertEquals(State.DONE, exportState);
     }
 
-    // Import it back into a new table
+    // Import the data back into the destination table.
     final String destTableId = tableId + "-verify";
 
     try (BigtableTableUtils destTable = new BigtableTableUtils(connection, destTableId, CF)) {
+      // Recreate destination table.
       destTable.deleteTable();
+      createDestinationTable(destTableId);
 
-      DataflowPipelineOptions pipelineOpts = PipelineOptionsFactory.as(DataflowPipelineOptions.class);
-      pipelineOpts.setRunner(DataflowRunner.class);
-      pipelineOpts.setGcpTempLocation(dataflowStagingLocation);
-      pipelineOpts.setNumWorkers(1);
-      pipelineOpts.setProject(projectId);
+      // Import the data.
+      State importState = importData(destTableId);
+      Assert.assertEquals(State.DONE, importState);
 
-      TemplatizedImportJob.ImportOptions importOpts = pipelineOpts.as(TemplatizedImportJob.ImportOptions.class);
-      importOpts.setBigtableInstanceId(StaticValueProvider.of(instanceId));
-      importOpts.setBigtableTableId(StaticValueProvider.of(destTableId));
-      importOpts.setSourcePattern(StaticValueProvider.of(workDir + "/part-*"));
-
-      DataflowPipelineOptions pipelineOpts2 =
-          PipelineOptionsFactory.as(DataflowPipelineOptions.class);
-      pipelineOpts2.setRunner(DataflowRunner.class);
-      pipelineOpts2.setGcpTempLocation(dataflowStagingLocation);
-      pipelineOpts2.setNumWorkers(1);
-      pipelineOpts2.setProject(projectId);
-      CreateTableHelper.CreateTableOpts createOpts =
-          pipelineOpts2.as(CreateTableHelper.CreateTableOpts.class);
-      createOpts.setBigtableInstanceId(instanceId);
-      createOpts.setBigtableTableId(destTableId);
-      createOpts.setSourcePattern(StaticValueProvider.of(workDir + "/part-*"));
-      createOpts.setFamilies(ImmutableList.of(CF));
-      CreateTableHelper.createTable(createOpts);
-
-      State state = TemplatizedImportJob.buildPipeline(importOpts).run().waitUntilFinish();
-      Assert.assertEquals(State.DONE, state);
-
-      // Now make sure that it correctly imported
+      // Make sure that the imported data is the same as the data was created.
       Assert.assertEquals(flattenedTestData, destTable.readAllCellsFromTable());
     }
   }

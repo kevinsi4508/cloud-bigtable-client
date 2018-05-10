@@ -103,23 +103,8 @@ public class TemplatizedImportJob {
         .fromArgs(args).withValidation()
         .as(ImportOptions.class);
 
-    Pipeline pipeline = buildPipeline(opts);
-
-    PipelineResult result = pipeline.run();
-    MetricResults metrics = result.metrics();
-
-    MetricQueryResults metricResults =
-        metrics.queryMetrics(
-            MetricsFilter.builder()
-                .addNameFilter(
-                    MetricNameFilter.named(
-                        CloudBigtableSingleTableBufferedWriteFn.class, "Mutations"))
-                .build());
-    Iterable<MetricResult<Long>> counters = metricResults.counters();
-    System.out.println("counters...");
-    for (MetricResult<Long> counter : counters) {
-      System.out.println("counter:" + counter.name().name() + ", value:" + counter.committed());
-    }
+    Pipeline p = buildPipeline(opts);
+    p.run();
   }
 
   @VisibleForTesting

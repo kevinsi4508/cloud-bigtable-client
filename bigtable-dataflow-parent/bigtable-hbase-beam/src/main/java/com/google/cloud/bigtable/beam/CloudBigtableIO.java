@@ -297,8 +297,7 @@ public class CloudBigtableIO {
      */
     @Override
     public void validate() {
-      // This gets validated at construction time.
-      // getConfiguration().validate();
+      getConfiguration().validate();
     }
 
     /**
@@ -402,8 +401,7 @@ public class CloudBigtableIO {
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
-      // This seems to be called at construction time.
-      //configuration.populateDisplayData(builder);
+      configuration.populateDisplayData(builder);
     }
   }
 
@@ -468,7 +466,6 @@ public class CloudBigtableIO {
     public long getEstimatedSizeBytes(PipelineOptions options) throws IOException {
       long totalEstimatedSizeBytes = 0;
 
-      // This seems to be called at construction time.
       byte[] scanStartKey = getConfiguration().getZeroCopyStartRow();
       byte[] scanEndKey = getConfiguration().getZeroCopyStopRow();
 

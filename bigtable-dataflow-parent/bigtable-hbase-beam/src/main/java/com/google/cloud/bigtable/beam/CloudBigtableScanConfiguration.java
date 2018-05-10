@@ -312,7 +312,6 @@ public class CloudBigtableScanConfiguration extends CloudBigtableTableConfigurat
    * @return The {@link ReadRowsRequest}.
    */
   public ReadRowsRequest getRequest() {
-    System.out.println("request:" + request.get());
     if (request.get().getTableName().isEmpty()) {
       BigtableInstanceName bigtableInstanceName =
           new BigtableInstanceName(getProjectId(), getInstanceId());

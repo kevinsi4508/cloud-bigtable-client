@@ -143,12 +143,6 @@ public class TemplatizedExportJob {
     @SuppressWarnings("unused")
     void setFilenamePrefix(ValueProvider<String> filenamePrefix);
 
-    @Description("Wait for pipeline to finish.")
-    @Default.Boolean(true)
-    boolean getWait();
-    @SuppressWarnings("unused")
-    void setWait(boolean wait);
-
     @Default.String("")
     ValueProvider<String> getOutput();
     @SuppressWarnings("unused")
